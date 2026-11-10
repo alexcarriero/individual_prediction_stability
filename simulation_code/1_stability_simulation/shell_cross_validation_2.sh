@@ -12,5 +12,5 @@
 #
 #SBATCH --array=1-100
 
-/home/julius_bs/acarriero/R-4.6.0/bin/Rscript "./execute_1.R" $SLURM_ARRAY_TASK_ID "cross_validation_2"
+/home/julius_bs/acarriero/R-4.6.0/bin/Rscript "./execute.R" $SLURM_ARRAY_TASK_ID "cross_validation_2"
 

@@ -16,24 +16,6 @@ Code to reproduce the simulation study in:
 
 This repository contains everything needed to reproduce the results of [*Estimating Stability of Individual-Specific Predictions from AI-based prediction models using Bootstrap and Cross-validation Resampling*](https://arxiv.org/abs/2610.33744): the data-generating mechanisms (DGMs), the model-development and resampling procedures, the simulation scripts used on the HPC, the scripts that calculate the performance measures, and the code for the tables and figures. All data are simulated, so no external data are needed.
 
-### Simulation scenarios
-
-| | |
-|---|---|
-| **Full factorial design** | 2 DGMs × 2 sample sizes = 4 scenarios (Table 1) |
-| **Data-generating mechanisms (DGMs)** | **(1) Linear:** logistic DGM with w₀ = −1.4649 and w₁ = 0.1610: six weak effects (w₁), three strong effects (3w₁) and three null effects, tuned to AUC ≈ 0.80.<br><br>**(2) Non-linear:** a random forest trained on a preparatory dataset (n = 10,000) generated with interactions and higher-order terms (Eq. 3) |
-| **Sample sizes** | N = 458 (minimum required sample size from `pmsampsize`) and N = 229 (half of that) |
-| **Initial datasets** | 100 per scenario |
-
-### Per initial dataset
-
-| Step | Description |
-|---|---|
-| **1. Original models** | Fit the two models, elastic net logistic regression (`glmnet`) and random forest (`ranger`), to the initial dataset, and obtain an in-sample original prediction for every individual |
-| **2. Reference** | Independent sampling: draw 200 new datasets of size N from the DGM, refit both models to each, and predict for every individual in the initial dataset |
-| **3. Resampling methods** | Non-parametric bootstrap, parametric bootstrap, out-of-bag bootstrap, and repeated 10-, 5- and 2-fold cross-validation. Each method gives 200 predictions per individual and model |
-| **4. Performance measures** | Per individual: prediction variance, empirical 95% range width, MAPE (vs. the original prediction), tMAPE (vs. the true DGM probability), and 2.5th and 97.5th percentiles. Each resampling method is then compared with the reference (signed difference and absolute relative deviation). Initial models are also assessed with AUC and calibration |
-
 ---
 
 ## Software

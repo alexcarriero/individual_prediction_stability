@@ -1,0 +1,32 @@
+---
+title: "Testing"
+output: html_document
+---
+
+```{r}
+# Set up 
+library(tidyverse)
+library(MASS)
+library(glmnet)
+library(xgboost)
+library(ranger)
+library(pROC)
+
+source("simulation_helpers.R")
+```
+
+```{r}
+# Testing
+
+sc = 1
+i = 1
+
+data <- readRDS(paste0("raw_data/scenario_", sc, "/sc_", sc, "_dataset_", i,".RDS"))
+
+method = "bootstrap"
+
+assess_stability(dataset = data, method = method, scenario = sc, iter = i, sim_seeds)
+```
+
+
+

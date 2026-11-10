@@ -1,0 +1,466 @@
+---
+title: "testing"
+output: html_document
+---
+
+# Set up
+```{r, warning = F, message = F}
+# Set up 
+library(tidyverse)
+library(MASS)
+library(glmnet)
+library(ranger)
+library(pROC)
+
+source("helpers.R")
+```
+
+```{r}
+# For reproducibility first, create a data frame with seeds 
+
+set.seed(125)
+
+scenario_1 <- runif(100, min = 0, max = 1000000000) %>% floor()
+scenario_2 <- runif(100, min = 0, max = 1000000000) %>% floor()
+external_1 <- runif(100, min = 0, max = 1000000000) %>% floor()
+
+seeds <- tibble(
+  scenario_1 = scenario_1, 
+  scenario_2 = scenario_2, 
+  external_1 = external_1
+)
+
+# quick check that there are no doubles 
+any(scenario_1 %in% scenario_2)
+intersect(scenario_1, scenario_2)
+
+unique(scenario_1) %>% length
+unique(scenario_2) %>% length
+
+# save seeds 
+saveRDS(seeds, "seeds.RDS")
+```
+
+# Data Generation 
+```{r}
+# generate data sets 
+
+# scenario 1 
+n = 458
+
+for(i in c(1:100)){
+  
+  data_set <- generate_data(n, seed = seeds$scenario_1[i])
+  
+  saveRDS(data_set, paste0("raw_data/scenario_1/sc_1_dataset_",i,".RDS"))
+}
+
+# scenario 2 
+n = 229
+for(i in c(1:100)){
+  
+  data_set <- generate_data(n, seed = seeds$scenario_2[i])
+  
+  saveRDS(data_set, paste0("raw_data/scenario_2/sc_2_dataset_",i,".RDS"))
+}
+
+# extra data sets to check external validation of models 
+n = 1000
+for(i in c(1:100)){
+  
+  data_set <- generate_data(n, seed = seeds$external_1[i])
+  
+  saveRDS(data_set, paste0("raw_data/external_1/external_1_dataset_",i,".RDS"))
+}
+
+```
+
+# Original Analyses (model training)
+```{r}
+# original analysis 
+seeds <- readRDS("seeds.RDS")
+
+# scenario 1
+
+for(i in c(1:100)){
+  
+  # read in a data set
+  df <- readRDS(paste0("raw_data/scenario_1/sc_1_dataset_", i, ".RDS"))
+  
+  # fit two models 
+  random_forest <- do_rf( data_set = df, seed = seeds$scenario_1[i], iter = i)
+  elastic_net   <- do_glm(data_set = df, seed = seeds$scenario_1[i], iter = i)
+  
+  # store models 
+  saveRDS(random_forest$model, paste0("results/models/scenario_1/scenario_1_iter_", i,"_random_forest.RDS"))
+  saveRDS(elastic_net$model, paste0("results/models/scenario_1/scenario_1_iter_", i,"_elastic_net.RDS"))
+  
+  # store results predictions 
+  saveRDS(bind_rows(random_forest$results, elastic_net$results), paste0("results/predictions/scenario_1/scenario_1_iter_", i,"_og_results.RDS"))
+  
+  # store hyperparameters 
+  saveRDS(random_forest$hyperparameters, paste0("results/hyperparameters/random_forest/scenario_1/scenario_1_iter_", i,"_hps.RDS"))
+  saveRDS(elastic_net$hyperparameters,  paste0("results/hyperparameters/elastic_net/scenario_1/scenario_1_iter_", i, "_hps.RDS"))
+}
+
+# scenario 2
+
+for(i in c(1:100)){
+  
+  # read in a data set
+  df <- readRDS(paste0("raw_data/scenario_2/sc_2_dataset_", i, ".RDS"))
+  
+  # fit two models 
+  random_forest <- do_rf( data_set = df, seed = seeds$scenario_2[i], iter = i)
+  elastic_net   <- do_glm(data_set = df, seed = seeds$scenario_2[i], iter = i)
+  
+  # store models 
+  saveRDS(random_forest$model, paste0("results/models/scenario_2/scenario_2_iter_", i,"_random_forest.RDS"))
+  saveRDS(elastic_net$model, paste0("results/models/scenario_2/scenario_2_iter_", i,"_elastic_net.RDS"))
+  
+  # store results predictions 
+  saveRDS(bind_rows(random_forest$results, elastic_net$results), paste0("results/predictions/scenario_2/scenario_2_iter_", i,"_og_results.RDS"))
+  
+  # store hyperparameters 
+  saveRDS(random_forest$hyperparameters, paste0("results/hyperparameters/random_forest/scenario_2/scenario_2_iter_", i,"_hps.RDS"))
+  saveRDS(elastic_net$hyperparameters,  paste0("results/hyperparameters/elastic_net/scenario_2/scenario_2_iter_", i, "_hps.RDS"))
+}
+```
+ 
+# Internal Validation 
+```{r, warning = F, message = F}
+# scenario 1 results 
+
+results <- tibble()
+
+ for(i in 1:100){
+    
+    read <- 
+      paste0("results/predictions/scenario_1/scenario_1_iter_", i,"_og_results.RDS") %>% 
+      map(readRDS) %>% 
+      as.data.frame()
+    
+    results <- bind_rows(results, read)
+ }
+
+performance_metrics <- calculate_pms(results)
+
+performance_metrics %>% 
+    pivot_longer(cols = c(auc, brier), 
+                 names_to = "metric", 
+                 values_to = "value") %>%
+    ggplot(aes(x = model, y = value, color = model)) +
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    facet_wrap(~ metric, scales = "free_y") +
+    labs(
+      x = NULL,
+      y = NULL,
+      title = "Scenario 1: Performance metrics per model"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none")
+
+results %>% 
+  mutate(y = as.numeric(y)-1) %>% 
+  ggplot(aes(x = pred_p, y = y, group = iter, colour = model)) +
+    geom_smooth(method = "loess", se = FALSE, alpha = 0.5, linewidth = 0.05) +
+    geom_abline(intercept = 0, slope = 1, colour = "black") +
+    scale_x_continuous(limits = c(0, 1)) +
+    scale_y_continuous(limits = c(0, 1)) +
+    labs(
+      x = "Predicted probability",
+      y = "Observed outcome",
+      title = "Scenario 1: Calibration curves"
+    ) +
+  facet_wrap(~model)+
+  theme_minimal()
+```
+
+```{r, warning = F, message = F}
+# scenario 2 results 
+
+results <- tibble()
+
+ for(i in 1:100){
+    
+    read <- 
+      paste0("results/predictions/scenario_2/scenario_2_iter_", i,"_og_results.RDS") %>% 
+      map(readRDS) %>% 
+      as.data.frame()
+    
+    results <- bind_rows(results, read)
+ }
+
+performance_metrics <- calculate_pms(results)
+
+performance_metrics %>% 
+    pivot_longer(cols = c(auc, brier), 
+                 names_to = "metric", 
+                 values_to = "value") %>%
+    ggplot(aes(x = model, y = value, color = model)) +
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    facet_wrap(~ metric, scales = "free_y") +
+    labs(
+      x = NULL,
+      y = NULL,
+      title = "Scenario 2: Performance metrics per model"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none")
+
+results %>% 
+  mutate(y = as.numeric(y)-1) %>% 
+  ggplot(aes(x = pred_p, y = y, group = iter, colour = model)) +
+    geom_smooth(method = "loess", se = FALSE, alpha = 0.5, linewidth = 0.05) +
+    geom_abline(intercept = 0, slope = 1, colour = "black") +
+    scale_x_continuous(limits = c(0, 1)) +
+    scale_y_continuous(limits = c(0, 1)) +
+    labs(
+      x = "Predicted probability",
+      y = "Observed outcome",
+      title = "Scenario 2: Calibration curves"
+    ) +
+  facet_wrap(~model)+
+  theme_minimal()
+```
+
+```{r}
+# Have a look at which hyperparameters were chosen 
+
+# Scenario 1
+
+# ELASTIC NET 
+hps <- tibble()
+
+ for(i in 1:100){
+    
+    read <- 
+      paste0("results/hyperparameters/elastic_net/scenario_1/scenario_1_iter_", i,"_hps.RDS") %>% 
+      map(readRDS) %>% 
+      as.data.frame()
+    
+    hps <- bind_rows(hps, read)
+ }
+
+hps %>%
+  pivot_longer(cols = -iter, names_to = "parameter", values_to = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_density(color = "wheat", fill = "wheat", alpha = 0.5) +
+  facet_wrap(~ parameter, scales = "free") +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Hyperparameter distributions"
+  ) +
+  theme_minimal()
+
+# RANDOM FOREST
+hps <- tibble()
+
+ for(i in 1:100){
+    
+    read <- 
+      paste0("results/hyperparameters/random_forest/scenario_1/scenario_1_iter_", i,"_hps.RDS") %>% 
+      map(readRDS) %>% 
+      as.data.frame()
+    
+    hps <- bind_rows(hps, read)
+ }
+
+hps %>%
+  pivot_longer(cols = -iter, names_to = "parameter", values_to = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_density(color = "wheat", fill = "wheat", alpha = 0.5) +
+  facet_wrap(~ parameter, scales = "free") +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Hyperparameter distributions"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# Scenario 2
+
+# ELASTIC NET 
+hps <- tibble()
+
+ for(i in 1:100){
+    
+    read <- 
+      paste0("results/hyperparameters/elastic_net/scenario_2/scenario_2_iter_", i,"_hps.RDS") %>% 
+      map(readRDS) %>% 
+      as.data.frame()
+    
+    hps <- bind_rows(hps, read)
+ }
+
+hps %>%
+  pivot_longer(cols = -iter, names_to = "parameter", values_to = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_density(color = "wheat", fill = "wheat", alpha = 0.5) +
+  facet_wrap(~ parameter, scales = "free") +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Hyperparameter distributions"
+  ) +
+  theme_minimal()
+
+# RANDOM FOREST
+hps <- tibble()
+
+ for(i in 1:100){
+    
+    read <- 
+      paste0("results/hyperparameters/random_forest/scenario_2/scenario_2_iter_", i,"_hps.RDS") %>% 
+      map(readRDS) %>% 
+      as.data.frame()
+    
+    hps <- bind_rows(hps, read)
+ }
+
+hps %>%
+  pivot_longer(cols = -iter, names_to = "parameter", values_to = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_density(color = "wheat", fill = "wheat", alpha = 0.5) +
+  facet_wrap(~ parameter, scales = "free") +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Hyperparameter distributions"
+  ) +
+  theme_minimal()
+```
+ 
+
+# External Validation 
+```{r}
+results = tibble()
+scenario = 1
+
+ for(i in 1:100){
+    
+    # read in external data set
+    ext <- readRDS(paste0("raw_data/external_1/external_1_dataset_", i, ".RDS"))
+    X   <- ext[, grep("^X", names(ext))] %>% as.matrix()
+    
+    # models 
+    path <- paste0("results/models/scenario_", scenario, "/scenario_", scenario, "_iter_", i)
+    rf   <- readRDS(paste0(path, "_random_forest.RDS"))
+    en   <- readRDS(paste0(path, "_elastic_net.RDS"))
+    
+    # predictions
+    rf_res <- ext %>% 
+      dplyr::select(id, true_p, y) %>% 
+      mutate(pred_p = predict(rf, data = X)$predictions[, "1"], 
+             model  = "random_forest", 
+             iter   = i)
+    
+    en_res <- ext %>% 
+      dplyr::select(id, true_p, y) %>% 
+      mutate(pred_p = as.numeric(predict(en, newx = X, s = en$lambda, type = "response")), 
+             model  = "glmnet", 
+             iter   = i)
+    
+    results <- bind_rows(results, rf_res, en_res)
+ }
+
+performance_metrics <- calculate_pms(results)
+
+performance_metrics %>% 
+    pivot_longer(cols = c(auc, brier), 
+                 names_to = "metric", 
+                 values_to = "value") %>%
+    ggplot(aes(x = model, y = value, color = model)) +
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    facet_wrap(~ metric, scales = "free_y") +
+    labs(
+      x = NULL,
+      y = NULL,
+      title = "Scenario 1: External performance metrics per model"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none")
+
+results %>% 
+  mutate(y = as.numeric(y)-1) %>% 
+  ggplot(aes(x = pred_p, y = y, group = iter, colour = model)) +
+    geom_smooth(method = "loess", se = FALSE, alpha = 0.5, linewidth = 0.05) +
+    geom_abline(intercept = 0, slope = 1, colour = "black") +
+    scale_x_continuous(limits = c(0, 1)) +
+    scale_y_continuous(limits = c(0, 1)) +
+    labs(
+      x = "Predicted probability",
+      y = "Observed outcome",
+      title = "Scenario 1: External calibration curves"
+    ) +
+  facet_wrap(~model)+
+  theme_minimal()
+```
+
+```{r}
+results = tibble()
+scenario = 2
+
+ for(i in 1:100){
+    
+    # read in external data set
+    ext <- readRDS(paste0("raw_data/external_1/external_1_dataset_", i, ".RDS"))
+    X   <- ext[, grep("^X", names(ext))] %>% as.matrix()
+    
+    # models 
+    path <- paste0("results/models/scenario_", scenario, "/scenario_", scenario, "_iter_", i)
+    rf   <- readRDS(paste0(path, "_random_forest.RDS"))
+    en   <- readRDS(paste0(path, "_elastic_net.RDS"))
+    
+    # predictions
+    rf_res <- ext %>% 
+      dplyr::select(id, true_p, y) %>% 
+      mutate(pred_p = predict(rf, data = X)$predictions[, "1"], 
+             model  = "random_forest", 
+             iter   = i)
+    
+    en_res <- ext %>% 
+      dplyr::select(id, true_p, y) %>% 
+      mutate(pred_p = as.numeric(predict(en, newx = X, s = en$lambda, type = "response")), 
+             model  = "glmnet", 
+             iter   = i)
+    
+    results <- bind_rows(results, rf_res, en_res)
+ }
+
+performance_metrics <- calculate_pms(results)
+
+performance_metrics %>% 
+    pivot_longer(cols = c(auc, brier), 
+                 names_to = "metric", 
+                 values_to = "value") %>%
+    ggplot(aes(x = model, y = value, color = model)) +
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    facet_wrap(~ metric, scales = "free_y") +
+    labs(
+      x = NULL,
+      y = NULL,
+      title = "Scenario 2: External performance metrics per model"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none")
+
+results %>% 
+  mutate(y = as.numeric(y)-1) %>% 
+  ggplot(aes(x = pred_p, y = y, group = iter, colour = model)) +
+    geom_smooth(method = "loess", se = FALSE, alpha = 0.5, linewidth = 0.05) +
+    geom_abline(intercept = 0, slope = 1, colour = "black") +
+    scale_x_continuous(limits = c(0, 1)) +
+    scale_y_continuous(limits = c(0, 1)) +
+    labs(
+      x = "Predicted probability",
+      y = "Observed outcome",
+      title = "Scenario : External calibration curves"
+    ) +
+  facet_wrap(~model)+
+  theme_minimal()
+```
+

@@ -1,0 +1,2 @@
+load("/Users/acarrier/Documents/MyPhD/6_uncertainty_estimation/github/stability_project/scripts/0_set_up/rf_dgm.RDS")
+load("/Users/acarrier/Documents/MyPhD/6_uncertainty_estimation/github/stability_project/scripts/0_set_up/seeds_non_linear.RDS")

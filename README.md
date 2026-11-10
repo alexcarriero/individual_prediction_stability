@@ -194,7 +194,7 @@ The code for Figures 4–7 and S-Figures 10–11, 22–25 and 30–31 will be ad
 
 ## Licence
 
-TODO (for example, MIT for code and CC-BY 4.0 for results)
+The code in this repository is released under the [MIT License](LICENSE).
 
 ## Contact
 

@@ -10,19 +10,17 @@ execute:
   message: false
 ---
 
-This document reproduces the tables and figures of the paper from the Parquet files written in Step 3 of the README (`results/parquet_v2/`, `results/original_predictions_v2/`, `results/hyperparameters_v2/` and `results/evaluation_v2/`). Render it from the repository root:
+This document reproduces all tables and figures of the paper from the Parquet files written in Step 3 of the README (`results/parquet_v2/`, `results/original_predictions_v2/`, `results/hyperparameters_v2/` and `results/evaluation_v2/`). The code is taken directly from the manuscript source. Render it from the repository root:
 
 ```bash
 quarto render results/scripts/figures_and_tables.qmd
 ```
 
-The code for Figures 4–7 and S-Figures 10–11, 22–25 and 30–31 will be added in a later update.
-
-
 # Setup
 
 ```{r}
 #| label: setup-theme
+
 library(ggplot2)
 
 # Use one visual style and palette throughout the manuscript.
@@ -50,6 +48,7 @@ fmt_percent <- function(x, accuracy = 0.1) {
 
 ```{r}
 #| label: setup-data
+
 library(arrow)
 library(tidyverse)
 library(kableExtra)
@@ -83,11 +82,6 @@ method_labels <- c(
   cross_validation_5 = "5-fold CV",
   cross_validation_2 = "2-fold CV",
   independent = "Independent"
-)
-
-method_colors <- c(
-  setNames(dark2_palette[1:6], unname(method_labels[1:6])),
-  "Independent" = "black"
 )
 
 metric_labels <- c(
@@ -194,6 +188,7 @@ oob_auc_indep_summary <- oob_auc_indep |>
 
 ```{r}
 #| label: setup-comparisons
+
 # Reshape the reference and practical-procedure results to one metric per row.
 reference_results <- evaluation_results |>
   filter(method == "independent") |>
@@ -250,7 +245,6 @@ comparison_results <- evaluation_results |>
   mutate(
     difference = estimate - reference,
     absolute_difference = abs(difference),
-    rel_difference = estimate / reference,
     rel_abs_difference = absolute_difference / reference,
     metric_label = factor(
       metric,
@@ -262,6 +256,10 @@ comparison_results <- evaluation_results |>
 
 ```{r}
 #| label: setup-event-fractions
+completeness <- evaluation_manifest |>
+  select(iterations, min_resamples) |>
+  unique()
+
 event_smry <- original_predictions |>
   distinct(sample_size, dgm, iter, id, y) |>
   summarise(event_fraction = mean(y), .by = c(sample_size, dgm, iter)) |>
@@ -296,16 +294,176 @@ reference_summary <- reference_by_iteration |>
     upper = quantile(value, 0.975),
     .by = c(sample_size_label, model_label, dgm, metric)
   )
+
+# Extract selected reference values for inline reporting.
+get_reference_mean <- function(
+  sample_size_value,
+  model_name,
+  metric_name,
+  dgm_name
+) {
+  reference_summary |>
+    filter(
+      sample_size_label == paste0("N = ", sample_size_value),
+      model_label == model_name,
+      metric == metric_name,
+      dgm == dgm_name
+    ) |>
+    pull(mean)
+}
+
+# Express contrasts on a relative scale.
+relative_change <- function(new_value, reference_value) {
+  new_value / reference_value - 1
+}
+```
+
+```{r}
+#| label: setup-agreement-plot-function
+
+plot_agreement <- function(metric_name, dgm_name = "linear") {
+  plot_data <- comparison_results |>
+    filter(
+      metric == metric_name,
+      dgm == dgm_name
+    )
+
+  plot_limits <- range(
+    c(plot_data$reference, plot_data$estimate),
+    na.rm = TRUE
+  )
+
+  ggplot(plot_data, aes(reference, estimate)) +
+    geom_bin_2d(bins = 100) +
+    geom_abline(slope = 1, intercept = 0, color = grey(0.5), linewidth = 0.25) +
+    # facet_grid(
+    #   rows = vars(method_label),
+    #   cols = vars(model_label, sample_size_label)
+    # ) +
+    ggh4x::facet_nested(
+      rows = vars(method_label),
+      cols = vars(model_label, sample_size_label),
+      nest_line = element_line(color = "white", linewidth = 1),
+      strip = ggh4x::strip_nested(
+        text_x = list(
+          element_text(margin = margin(b = 5, t = 3)), # model labels
+          element_text(margin = margin(b = 3, t = 5)) # sample-size labels
+        ),
+        by_layer_x = TRUE
+      )
+    ) +
+    coord_equal(xlim = plot_limits, ylim = plot_limits) +
+    scale_fill_viridis_c(trans = "log10") +
+    labs(
+      x = "Independent sampling",
+      y = "Resampling procedure",
+      fill = "Count"
+    ) +
+    theme(
+      legend.position = "right"
+    )
+}
 ```
 
 # Main text
 
+## Tables 1 and 2
+
+**Table 1. Overview of simulation scenarios.**
+
+```{r}
+#| label: table-1
+
+simulation_settings <- data.frame(
+  Factor = c(
+    "Data-Generating Mechanism",
+    "Sample Size",
+    "Target Outcome Fraction\\textsuperscript{*}",
+    "Number of Predictor Parameters"
+  ),
+  S1 = c("Linear", "458", "0.25", "12"),
+  S2 = c("Linear", "229", "0.25", "12"),
+  S3 = c("Non-linear", "458", "0.275", "12"),
+  S4 = c("Non-linear", "229", "0.275", "12"),
+  check.names = FALSE
+)
+
+kableExtra::kbl(
+  simulation_settings,
+  format = if (knitr::is_latex_output()) "latex" else "html",
+  booktabs = TRUE,
+  align = c("l", "c", "c", "c", "c"),
+  col.names = c("", paste("Scenario", 1:4)),
+  escape = FALSE
+) |>
+  kableExtra::kable_styling(
+    latex_options = "HOLD_position",
+    full_width = FALSE,
+    position = "center"
+  ) |>
+  kableExtra::footnote(
+    symbol = paste(
+      "For the non-linear DGM, the outcome fraction refers",
+      "to the logistic model used to generate the Random Forest's initial training data."
+    ),
+    symbol_title = "",
+    escape = FALSE,
+    threeparttable = TRUE,
+    footnote_as_chunk = TRUE
+  )
+```
+
+**Table 2. Overview of methods for estimating stability of individual predictions.**
+
+```{r}
+#| label: table-2
+
+resampling_methods <- data.frame(
+  Method = c(
+    "Independent sampling",
+    "Non-parametric bootstrap",
+    "Parametric bootstrap",
+    "Out-of-bag bootstrap",
+    "10-fold cross-validation",
+    "5-fold cross-validation",
+    "2-fold cross-validation"
+  ),
+  Description = c(
+    "Generate 200 independent datasets of size $N$ from the true data-generating mechanism. Fit models to each and predict for individuals in the initial dataset. This serves as the baseline for ideal stability estimation.",
+    "Draw 200 bootstrap samples of size $N$ with replacement from the initial dataset. Fit models to each resample and predict for all individuals in the initial dataset.",
+    "Fit each model-development procedure to the initial dataset and obtain model-specific fitted probabilities. For each of 200 replicates, simulate a separate Bernoulli outcome vector from each model's fitted probabilities while keeping the predictor matrix fixed. Refit each model to its own simulated outcomes and predict all individuals in the initial dataset.",
+    "Draw bootstrap samples of size $N$ with replacement, fit both models, and predict only for the individuals absent from each sample. Continue until each individual has 200 out-of-bag predictions.",
+    "Repeat 10-fold cross-validation 200 times. In each repetition, fit 10 models, each using nine folds to predict the remaining fold, so each individual receives one prediction from a model fitted to approximately $0.9N$ observations in each of the 200 repetitions.",
+    "Analogous to repeated 10-fold cross-validation, using approximately $0.8N$ observations for each fit.",
+    "Analogous to repeated 10-fold cross-validation, using approximately $0.5N$ observations for each fit."
+  )
+)
+
+kableExtra::kbl(
+  resampling_methods,
+  format = if (knitr::is_latex_output()) "latex" else "html",
+  booktabs = TRUE,
+  longtable = knitr::is_latex_output(),
+  align = c("l", "l"),
+  escape = FALSE,
+  linesep = "\\addlinespace"
+) |>
+  kableExtra::kable_styling(
+    latex_options = "repeat_header",
+    full_width = FALSE,
+    position = "center"
+  ) |>
+  kableExtra::column_spec(1, width = "4.2cm") |>
+  kableExtra::column_spec(2, width = "10.0cm")
+```
+
 ## Table 3
 
-**Table 3.** Prediction instability under independent sampling.
+**Table 3. Prediction instability under independent sampling.**
 
 ```{r}
 #| label: table-3
+
 reference_table <- reference_summary |>
   mutate(
     value = if_else(
@@ -359,12 +517,13 @@ reference_table |>
 
 ## Figure 1
 
-**Figure 1.** Individual-level prediction instability under independent sampling across the true (DGM) outcome probability range.
+**Figure 1. Individual-level prediction instability under independent sampling across the true (DGM) outcome probability range.**
 
 ```{r}
 #| label: figure-1
 #| fig-width: 7
 #| fig-height: 8.8
+#| cache: true
 
 instability_risk_plot <- subset(evaluation_results, method == "independent") |>
   pivot_longer(
@@ -408,7 +567,7 @@ instability_risk_plot <- subset(evaluation_results, method == "independent") |>
     linetype = guide_legend(override.aes = list(color = "black"))
   )
 
-# Count each simulated person once, independently of the fitted model.
+# Count each simulated individual once, independently of the fitted model.
 risk_distribution_data <- original_predictions |>
   filter(model == "glmnet", sample_size == 458)
 
@@ -424,7 +583,7 @@ risk_distribution_plot <- ggplot(risk_distribution_data, aes(true_p)) +
     limits = c(0, 1),
     labels = scales::percent_format(accuracy = 1)
   ) +
-  labs(x = "True (DGM) risk", y = "Count") +
+  labs(x = "True (DGM) outcome probability", y = "Count") +
   theme(
     strip.text = element_blank(),
     strip.background = element_blank()
@@ -442,55 +601,7 @@ cowplot::plot_grid(
 
 ## Figures 2 and 3
 
-Plotting function used for Figures 2–3 and S-Figures 12–21.
-
-```{r}
-#| label: agreement-plot-function
-plot_agreement <- function(metric_name, dgm_name = "linear") {
-  plot_data <- comparison_results |>
-    filter(
-      metric == metric_name,
-      dgm == dgm_name
-    )
-
-  plot_limits <- range(
-    c(plot_data$reference, plot_data$estimate),
-    na.rm = TRUE
-  )
-
-  ggplot(plot_data, aes(reference, estimate)) +
-    geom_bin_2d(bins = 100) +
-    geom_abline(slope = 1, intercept = 0, color = grey(0.5), linewidth = 0.25) +
-    # facet_grid(
-    #   rows = vars(method_label),
-    #   cols = vars(model_label, sample_size_label)
-    # ) +
-    ggh4x::facet_nested(
-      rows = vars(method_label),
-      cols = vars(model_label, sample_size_label),
-      nest_line = element_line(color = "white", linewidth = 1),
-      strip = ggh4x::strip_nested(
-        text_x = list(
-          element_text(margin = margin(b = 5, t = 3)), # model labels
-          element_text(margin = margin(b = 3, t = 5)) # sample-size labels
-        ),
-        by_layer_x = TRUE
-      )
-    ) +
-    coord_equal(xlim = plot_limits, ylim = plot_limits) +
-    scale_fill_viridis_c(trans = "log10") +
-    labs(
-      x = "Independent sampling",
-      y = "Resampling procedure",
-      fill = "Count"
-    ) +
-    theme(
-      legend.position = "right"
-    )
-}
-```
-
-**Figure 2.** Agreement with independent sampling for empirical 95% range width, linear DGM.
+**Figure 2. Agreement with independent sampling for empirical 95% range width, linear DGM.**
 
 ```{r}
 #| label: figure-2
@@ -504,7 +615,7 @@ plot_agreement("pi_width", "linear") +
   )
 ```
 
-**Figure 3.** Agreement with independent sampling for empirical 95% range width, non-linear DGM.
+**Figure 3. Agreement with independent sampling for empirical 95% range width, non-linear DGM.**
 
 ```{r}
 #| label: figure-3
@@ -518,14 +629,220 @@ plot_agreement("pi_width", "nonlinear") +
   )
 ```
 
+## Figures 4 and 5
+
+**Figure 4. Absolute relative deviation from independent sampling across the true (DGM) outcome probability range, linear DGM, larger sample size.**
+
+```{r}
+#| label: figure-4
+#| fig-width: 7
+#| fig-height: 5.8
+#| cache: true
+
+comparison_results |>
+  filter(
+    dgm == "linear",
+    metric %in% primary_metrics,
+    sample_size_label == sample_size_labels[1]
+  ) |>
+  ggplot(
+    aes(true_p, rel_abs_difference, color = method_label, fill = method_label)
+  ) +
+  geom_hline(yintercept = 0, colour = grey(0.5), linewidth = 0.25) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x, bs = "cs")
+  ) +
+  theme(legend.position = "right") +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(model_label),
+    scales = "free_y"
+  ) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme(panel.spacing.x = grid::unit(1.2, "lines")) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  expand_limits(y = 0) +
+  labs(
+    x = "True (DGM) outcome probability",
+    y = "Absolute relative deviation",
+    color = "Procedure",
+    fill = "Procedure"
+  )
+```
+
+**Figure 5. As Figure 4, non-linear DGM. One outlying observation is excluded (see S-Figures 30 and 31).**
+
+```{r}
+#| label: figure-5
+#| fig-width: 7
+#| fig-height: 5.8
+#| cache: true
+
+comparison_results |>
+  filter(
+    dgm == "nonlinear",
+    metric %in% primary_metrics,
+    sample_size_label == sample_size_labels[1],
+    (id != 56 | iter != 11)
+  ) |>
+  ggplot(
+    aes(true_p, rel_abs_difference, color = method_label, fill = method_label)
+  ) +
+  geom_hline(yintercept = 0, colour = grey(0.5), linewidth = 0.25) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x, bs = "cs")
+  ) +
+  theme(legend.position = "right") +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(model_label),
+    scales = "free_y"
+  ) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme(panel.spacing.x = grid::unit(1.2, "lines")) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  expand_limits(y = 0) +
+  labs(
+    x = "True (DGM) outcome probability",
+    y = "Absolute relative deviation",
+    color = "Procedure",
+    fill = "Procedure"
+  )
+```
+
+## Figures 6 and 7
+
+**Figure 6. Prediction instability plot for selected procedures, linear DGM, one initial dataset of the smaller sample size.**
+
+```{r}
+#| label: figure-6
+#| fig-width: 9
+#| fig-height: 7
+
+example_method_ids <- c(
+  "independent",
+  "bootstrap",
+  "bootstrap_635",
+  "cross_validation_2"
+)
+
+example_prediction_results <- open_dataset(
+  here::here("results", "parquet_v2")
+) |>
+  filter(dgm == "linear") |>
+  filter(
+    sample_size == 229,
+    method %in% example_method_ids,
+    iter == 60
+  ) |>
+  collect()
+
+example_prediction_results |>
+  left_join(
+    select(
+      original_predictions,
+      id,
+      iter,
+      sample_size,
+      dgm,
+      model,
+      model_label,
+      original_pred_p
+    ),
+    by = c("dgm", "sample_size", "model", "iter", "id")
+  ) |>
+  mutate(
+    method_label = factor(
+      method,
+      levels = example_method_ids,
+      labels = unname(method_labels[example_method_ids])
+    )
+  ) |>
+  ggplot(aes(x = original_pred_p, y = pred_p)) +
+  ggrastr::rasterise(
+    geom_point(alpha = 0.3, size = 0.2),
+    dpi = 300,
+    dev = "ragg"
+  ) +
+  geom_abline(slope = 1, intercept = 0, color = "grey50") +
+  facet_grid(rows = vars(model_label), cols = vars(method_label)) +
+  labs(
+    x = "Original estimated outcome probability",
+    y = "Estimated outcome probability under resampling procedure"
+  )
+```
+
+**Figure 7. As Figure 6, non-linear DGM.**
+
+```{r}
+#| label: figure-7
+#| fig-width: 9
+#| fig-height: 7
+
+example_method_ids <- c(
+  "independent",
+  "bootstrap",
+  "bootstrap_635",
+  "cross_validation_2"
+)
+
+example_prediction_results_nonlin <- open_dataset(
+  here::here("results", "parquet_v2")
+) |>
+  filter(dgm == "nonlinear") |>
+  filter(
+    sample_size == 229,
+    method %in% example_method_ids,
+    iter == 60
+  ) |>
+  collect()
+
+example_prediction_results_nonlin |>
+  left_join(
+    select(
+      original_predictions,
+      id,
+      iter,
+      sample_size,
+      dgm,
+      model,
+      model_label,
+      original_pred_p
+    ),
+    by = c("dgm", "sample_size", "model", "iter", "id")
+  ) |>
+  mutate(
+    method_label = factor(
+      method,
+      levels = example_method_ids,
+      labels = unname(method_labels[example_method_ids])
+    )
+  ) |>
+  ggplot(aes(x = original_pred_p, y = pred_p)) +
+  ggrastr::rasterise(
+    geom_point(alpha = 0.3, size = 0.2),
+    dpi = 300,
+    dev = "ragg"
+  ) +
+  geom_abline(slope = 1, intercept = 0, color = "grey50") +
+  facet_grid(rows = vars(model_label), cols = vars(method_label)) +
+  labs(
+    x = "Original estimated outcome probability",
+    y = "Estimated outcome probability under resampling procedure"
+  )
+```
+
 # Supplementary material
 
 ## S-Table 1
 
-**S-Table 1.** Model performance in the original datasets.
+**S-Table 1. Model performance in the original datasets.**
 
 ```{r}
 #| label: s-table-1
+
 initial_performance_table <- auc_summary |>
   left_join(
     select(
@@ -544,7 +861,7 @@ initial_performance_table <- auc_summary |>
   transmute(
     `Sample\nsize` = sample_size_label,
     DGM = dgm,
-    `Event fraction` = sprintf(
+    `Outcome fraction` = sprintf(
       "%.3f [%.3f, %.3f]",
       mean_ef,
       lower.y,
@@ -595,7 +912,7 @@ initial_performance_table %>%
 
 ## S-Figure 1
 
-**S-Figure 1.** AUCs of models fitted to independently sampled development data and applied to the initial datasets.
+**S-Figure 1. AUCs of models fitted to independently sampled development data and applied to the initial datasets.**
 
 ```{r}
 #| label: s-figure-1
@@ -658,7 +975,7 @@ oob_auc_indep |>
 
 ## S-Figures 2 and 3
 
-**S-Figure 2.** Agreement between in-sample predictions and DGM probabilities, linear DGM.
+**S-Figure 2. Agreement between in-sample predictions and DGM probabilities, linear DGM.**
 
 ```{r}
 #| label: s-figure-2
@@ -672,17 +989,9 @@ original_predictions |>
     aes(
       original_pred_p,
       true_p
-      # group = interaction(sample_size, model, iter)
     )
   ) +
   geom_bin_2d(bins = 100) +
-  # geom_smooth(
-  #   method = "loess",
-  #   formula = y ~ x,
-  #   se = FALSE,
-  #   color = grey(0.75),
-  #   linewidth = 0.25
-  # ) +
   geom_abline(slope = 1, intercept = 0, color = "#909090", linewidth = 1) +
   geom_smooth(
     # aes(group = 1),
@@ -695,10 +1004,13 @@ original_predictions |>
   scale_fill_viridis_c(trans = "log10") +
   facet_grid(rows = vars(sample_size_label), cols = vars(model_label)) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Original estimated risk", y = "True (DGM) risk")
+  labs(
+    x = "Original estimated outcome probability",
+    y = "True (DGM) outcome probability"
+  )
 ```
 
-**S-Figure 3.** Agreement between in-sample predictions and DGM probabilities, non-linear DGM.
+**S-Figure 3. Agreement between in-sample predictions and DGM probabilities, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-3
@@ -712,17 +1024,9 @@ original_predictions |>
     aes(
       original_pred_p,
       true_p
-      # group = interaction(sample_size, model, iter)
     )
   ) +
   geom_bin_2d(bins = 100) +
-  # geom_smooth(
-  #   method = "loess",
-  #   formula = y ~ x,
-  #   se = FALSE,
-  #   color = grey(0.75),
-  #   linewidth = 0.25
-  # ) +
   geom_abline(slope = 1, intercept = 0, color = "#909090", linewidth = 1) +
   geom_smooth(
     # aes(group = 1),
@@ -735,12 +1039,15 @@ original_predictions |>
   scale_fill_viridis_c(trans = "log10") +
   facet_grid(rows = vars(sample_size_label), cols = vars(model_label)) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Original estimated risk", y = "True (DGM) risk")
+  labs(
+    x = "Original estimated outcome probability",
+    y = "True (DGM) outcome probability"
+  )
 ```
 
 ## S-Figures 4 to 9
 
-**S-Figure 4.** Calibration of models fitted on the first independent sample, linear DGM.
+**S-Figure 4. Calibration of models fitted on the first independent sample, linear DGM.**
 
 ```{r}
 #| label: s-figure-4
@@ -795,10 +1102,10 @@ res_re1 %>%
   ) +
   facet_grid(rows = vars(sample_size_label), cols = vars(model_label)) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Estimated risk", y = "Observed outcome")
+  labs(x = "Estimated outcome probability", y = "Observed outcome")
 ```
 
-**S-Figure 5.** Calibration of models fitted on the first independent sample, non-linear DGM.
+**S-Figure 5. Calibration of models fitted on the first independent sample, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-5
@@ -830,10 +1137,10 @@ res_re1 %>%
   ) +
   facet_grid(rows = vars(sample_size_label), cols = vars(model_label)) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Estimated risk", y = "Observed outcome")
+  labs(x = "Estimated outcome probability", y = "Observed outcome")
 ```
 
-**S-Figure 6.** Calibration of models fitted on the first bootstrap samples, linear DGM.
+**S-Figure 6. Calibration of models fitted on the first bootstrap samples, linear DGM.**
 
 ```{r}
 #| label: s-figure-6
@@ -865,10 +1172,10 @@ res_re1 %>%
   ) +
   facet_grid(rows = vars(method_label), cols = vars(model_label)) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Estimated risk", y = "Observed outcome")
+  labs(x = "Estimated outcome probability", y = "Observed outcome")
 ```
 
-**S-Figure 7.** Calibration of models fitted on the first bootstrap samples, non-linear DGM.
+**S-Figure 7. Calibration of models fitted on the first bootstrap samples, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-7
@@ -902,10 +1209,10 @@ res_re1 %>%
   ) +
   facet_grid(rows = vars(method_label), cols = vars(model_label)) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Estimated risk", y = "Observed outcome")
+  labs(x = "Estimated outcome probability", y = "Observed outcome")
 ```
 
-**S-Figure 8.** Calibration of models fitted on the first cross-validation samples, linear DGM.
+**S-Figure 8. Calibration of models fitted on the first cross-validation samples, linear DGM.**
 
 ```{r}
 #| label: s-figure-8
@@ -942,10 +1249,10 @@ res_re1 %>%
   ) +
   facet_grid(rows = vars(method_label), cols = vars(model_label)) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Estimated risk", y = "Observed outcome")
+  labs(x = "Estimated outcome probability", y = "Observed outcome")
 ```
 
-**S-Figure 9.** Calibration of models fitted on the first cross-validation samples, non-linear DGM.
+**S-Figure 9. Calibration of models fitted on the first cross-validation samples, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-9
@@ -982,12 +1289,92 @@ res_re1 %>%
   ) +
   facet_grid(rows = vars(method_label), cols = vars(model_label)) +
   coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Estimated risk", y = "Observed outcome")
+  labs(x = "Estimated outcome probability", y = "Observed outcome")
+```
+
+## S-Figures 10 and 11
+
+**S-Figure 10. Absolute relative deviation from independent sampling, smaller sample size, linear DGM.**
+
+```{r}
+#| label: s-figure-10
+#| fig-width: 7
+#| fig-height: 7.5
+#| cache: true
+
+comparison_results |>
+  filter(
+    metric %in% primary_metrics,
+    dgm == "linear",
+    sample_size_label == sample_size_labels[2]
+  ) |>
+  ggplot(
+    aes(true_p, rel_abs_difference, color = method_label, fill = method_label)
+  ) +
+  geom_hline(yintercept = 0, colour = grey(0.5), linewidth = 0.25) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x, bs = "cs")
+  ) +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(model_label),
+    scales = "free_y"
+  ) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme(panel.spacing.x = grid::unit(1.2, "lines")) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  expand_limits(y = 0) +
+  labs(
+    x = "True (DGM) outcome probability",
+    y = "Absolute relative deviation",
+    color = "Procedure",
+    fill = "Procedure"
+  )
+```
+
+**S-Figure 11. Absolute relative deviation from independent sampling, smaller sample size, non-linear DGM.**
+
+```{r}
+#| label: s-figure-11
+#| fig-width: 7
+#| fig-height: 7.5
+#| cache: true
+
+comparison_results |>
+  filter(
+    metric %in% primary_metrics,
+    dgm == "nonlinear",
+    sample_size_label == sample_size_labels[2]
+  ) |>
+  ggplot(
+    aes(true_p, rel_abs_difference, color = method_label, fill = method_label)
+  ) +
+  geom_hline(yintercept = 0, colour = grey(0.5), linewidth = 0.25) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x, bs = "cs")
+  ) +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(model_label),
+    scales = "free_y"
+  ) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme(panel.spacing.x = grid::unit(1.2, "lines")) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  expand_limits(y = 0) +
+  labs(
+    x = "True (DGM) outcome probability",
+    y = "Absolute relative deviation",
+    color = "Procedure",
+    fill = "Procedure"
+  )
 ```
 
 ## S-Figures 12 to 21
 
-**S-Figure 12.** Agreement for MAPE, linear DGM.
+**S-Figure 12. Agreement for MAPE, linear DGM.**
 
 ```{r}
 #| label: s-figure-12
@@ -997,7 +1384,7 @@ res_re1 %>%
 plot_agreement("MAPE", "linear")
 ```
 
-**S-Figure 13.** Agreement for MAPE, non-linear DGM.
+**S-Figure 13. Agreement for MAPE, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-13
@@ -1007,7 +1394,7 @@ plot_agreement("MAPE", "linear")
 plot_agreement("MAPE", "nonlinear")
 ```
 
-**S-Figure 14.** Agreement for prediction variance, linear DGM.
+**S-Figure 14. Agreement for prediction variance, linear DGM.**
 
 ```{r}
 #| label: s-figure-14
@@ -1020,7 +1407,7 @@ plot_agreement("variance", "linear") +
   )
 ```
 
-**S-Figure 15.** Agreement for prediction variance, non-linear DGM.
+**S-Figure 15. Agreement for prediction variance, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-15
@@ -1033,7 +1420,7 @@ plot_agreement("variance", "nonlinear")
 # )
 ```
 
-**S-Figure 16.** Agreement for tMAPE, linear DGM.
+**S-Figure 16. Agreement for tMAPE, linear DGM.**
 
 ```{r}
 #| label: s-figure-16
@@ -1043,7 +1430,7 @@ plot_agreement("variance", "nonlinear")
 plot_agreement("tMAPE", "linear")
 ```
 
-**S-Figure 17.** Agreement for tMAPE, non-linear DGM.
+**S-Figure 17. Agreement for tMAPE, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-17
@@ -1053,7 +1440,7 @@ plot_agreement("tMAPE", "linear")
 plot_agreement("tMAPE", "nonlinear")
 ```
 
-**S-Figure 18.** Agreement for the 2.5th percentile, linear DGM.
+**S-Figure 18. Agreement for the 2.5th percentile, linear DGM.**
 
 ```{r}
 #| label: s-figure-18
@@ -1063,7 +1450,7 @@ plot_agreement("tMAPE", "nonlinear")
 plot_agreement("q025", "linear")
 ```
 
-**S-Figure 19.** Agreement for the 2.5th percentile, non-linear DGM.
+**S-Figure 19. Agreement for the 2.5th percentile, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-19
@@ -1073,7 +1460,7 @@ plot_agreement("q025", "linear")
 plot_agreement("q025", "nonlinear")
 ```
 
-**S-Figure 20.** Agreement for the 97.5th percentile, linear DGM.
+**S-Figure 20. Agreement for the 97.5th percentile, linear DGM.**
 
 ```{r}
 #| label: s-figure-20
@@ -1083,7 +1470,7 @@ plot_agreement("q025", "nonlinear")
 plot_agreement("q975", "linear")
 ```
 
-**S-Figure 21.** Agreement for the 97.5th percentile, non-linear DGM.
+**S-Figure 21. Agreement for the 97.5th percentile, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-21
@@ -1093,9 +1480,135 @@ plot_agreement("q975", "linear")
 plot_agreement("q975", "nonlinear")
 ```
 
+## S-Figures 22 to 25
+
+**S-Figure 22. Difference from independent sampling, Elastic Net, linear DGM, larger sample size.**
+
+```{r}
+#| label: s-figure-22
+#| fig-width: 9
+#| fig-height: 7
+#| cache: true
+
+comparison_results |>
+  filter(
+    model == "glmnet",
+    sample_size == 458,
+    dgm == "linear"
+  ) |>
+  ggplot(aes(x = true_p, y = difference)) +
+  geom_bin_2d(bins = 100) +
+  geom_hline(yintercept = 0, color = grey(0.5), linewidth = 0.25) +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(method_label),
+    scales = "free_y"
+  ) +
+  scale_fill_viridis_c(trans = "log10") +
+  theme(legend.position = "right") +
+  labs(
+    x = "True outcome probability (DGM)",
+    y = "Difference to independent sampling",
+    fill = "Count"
+  )
+```
+
+**S-Figure 23. Difference from independent sampling, Elastic Net, non-linear DGM, larger sample size.**
+
+```{r}
+#| label: s-figure-23
+#| fig-width: 9
+#| fig-height: 7
+#| cache: true
+
+comparison_results |>
+  filter(
+    model == "glmnet",
+    sample_size == 458,
+    dgm == "nonlinear"
+  ) |>
+  ggplot(aes(x = true_p, y = difference)) +
+  geom_bin_2d(bins = 100) +
+  geom_hline(yintercept = 0, color = grey(0.5), linewidth = 0.25) +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(method_label),
+    scales = "free_y"
+  ) +
+  scale_fill_viridis_c(trans = "log10") +
+  theme(legend.position = "right") +
+  labs(
+    x = "True outcome probability (DGM)",
+    y = "Difference to independent sampling",
+    fill = "Count"
+  )
+```
+
+**S-Figure 24. Difference from independent sampling, Random Forest, linear DGM, larger sample size.**
+
+```{r}
+#| label: s-figure-24
+#| fig-width: 9
+#| fig-height: 7
+#| cache: true
+
+comparison_results |>
+  filter(
+    model == "random_forest",
+    sample_size == 458,
+    dgm == "linear"
+  ) |>
+  ggplot(aes(x = true_p, y = difference)) +
+  geom_bin_2d(bins = 100) +
+  geom_hline(yintercept = 0, color = grey(0.5), linewidth = 0.25) +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(method_label),
+    scales = "free_y"
+  ) +
+  scale_fill_viridis_c(trans = "log10") +
+  theme(legend.position = "right") +
+  labs(
+    x = "True outcome probability (DGM)",
+    y = "Difference to independent sampling",
+    fill = "Count"
+  )
+```
+
+**S-Figure 25. Difference from independent sampling, Random Forest, non-linear DGM, larger sample size.**
+
+```{r}
+#| label: s-figure-25
+#| fig-width: 9
+#| fig-height: 7
+#| cache: true
+
+comparison_results |>
+  filter(
+    model == "random_forest",
+    sample_size == 458,
+    dgm == "nonlinear"
+  ) |>
+  ggplot(aes(x = true_p, y = difference)) +
+  geom_bin_2d(bins = 100) +
+  geom_hline(yintercept = 0, color = grey(0.5), linewidth = 0.25) +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(method_label),
+    scales = "free_y"
+  ) +
+  scale_fill_viridis_c(trans = "log10") +
+  theme(legend.position = "right") +
+  labs(
+    x = "True outcome probability (DGM)",
+    y = "Difference to independent sampling",
+    fill = "Count"
+  )
+```
+
 ## S-Figures 26 to 29
 
-**S-Figure 26.** Hyperparameters selected for the original elastic net fits, linear DGM.
+**S-Figure 26. Hyperparameters selected for the original Elastic Net fits, linear DGM.**
 
 ```{r}
 #| label: s-figure-26
@@ -1162,14 +1675,12 @@ glmnet_lambda_histogram <- ggplot(
   plot_layout(widths = c(4, 1), heights = c(1, 4))
 ```
 
-**S-Figure 27.** Hyperparameters selected for the original elastic net fits, non-linear DGM.
+**S-Figure 27. Hyperparameters selected for the original Elastic Net fits, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-27
 #| fig-width: 7
 #| fig-height: 5
-
-library(patchwork)
 
 glmnet_hyperparameters_nonlin <- open_dataset(
   here::here("results", "hyperparameters_v2"),
@@ -1229,7 +1740,7 @@ glmnet_lambda_histogram_nonlin <- ggplot(
   plot_layout(widths = c(4, 1), heights = c(1, 4))
 ```
 
-**S-Figure 28.** Hyperparameters selected for the original random forest fits, linear DGM.
+**S-Figure 28. Hyperparameters selected for the original Random Forest fits, linear DGM.**
 
 ```{r}
 #| label: s-figure-28
@@ -1299,7 +1810,7 @@ rf_node_histogram <- ggplot(
   plot_layout(widths = c(4, 1), heights = c(1, 4))
 ```
 
-**S-Figure 29.** Hyperparameters selected for the original random forest fits, non-linear DGM.
+**S-Figure 29. Hyperparameters selected for the original Random Forest fits, non-linear DGM.**
 
 ```{r}
 #| label: s-figure-29
@@ -1367,4 +1878,143 @@ rf_node_histogram_nonlin <- ggplot(
 (rf_mtry_histogram_nonlin + plot_spacer()) /
   (rf_scatter_nonlin + rf_node_histogram_nonlin) +
   plot_layout(widths = c(4, 1), heights = c(1, 4))
+```
+
+## S-Figures 30 and 31
+
+```{r}
+#| label: setup-outlier-data
+
+# Use the same individual and initial dataset across all sampling procedures.
+outlier_predictions <- open_dataset(
+  here::here("results", "parquet_v2")
+) |>
+  filter(
+    dgm == "nonlinear",
+    sample_size == 458,
+    model == "glmnet",
+    iter == 11,
+    id == 56
+  ) |>
+  collect() |>
+  left_join(
+    original_predictions |>
+      select(dgm, sample_size, model, iter, id, original_pred_p),
+    by = c("dgm", "sample_size", "model", "iter", "id"),
+    relationship = "many-to-one"
+  ) |>
+  mutate(
+    method_label = factor(
+      method,
+      levels = names(method_labels),
+      labels = unname(method_labels)
+    )
+  )
+
+outlier_case <- outlier_predictions |>
+  distinct(true_p, original_pred_p)
+stopifnot(nrow(outlier_case) == 1L)
+
+outlier_summary <- outlier_predictions |>
+  summarise(
+    n = n(),
+    min_prediction = min(pred_p),
+    above_099 = sum(pred_p > 0.99),
+    near_one = sum(pred_p > 1 - 1e-10),
+    q025 = quantile(pred_p, 0.025),
+    q975 = quantile(pred_p, 0.975),
+    .by = method
+  ) |>
+  mutate(range_width = q975 - q025)
+stopifnot(nrow(outlier_summary) == 7L, all(outlier_summary$n == 200L))
+
+get_outlier_stat <- function(method_value, statistic) {
+  value <- outlier_summary |>
+    filter(method == method_value) |>
+    pull(all_of(statistic))
+  stopifnot(length(value) == 1L)
+  value
+}
+```
+
+**S-Figure 30. Figure 5 with the outlying observation included.**
+
+```{r}
+#| label: s-figure-30
+#| fig-width: 7
+#| fig-height: 5.8
+#| cache: true
+
+comparison_results |>
+  filter(
+    dgm == "nonlinear",
+    metric %in% primary_metrics,
+    sample_size_label == sample_size_labels[1]
+  ) |>
+  ggplot(
+    aes(true_p, rel_abs_difference, color = method_label, fill = method_label)
+  ) +
+  geom_hline(yintercept = 0, colour = grey(0.5), linewidth = 0.25) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x, bs = "cs")
+  ) +
+  theme(legend.position = "right") +
+  facet_grid(
+    rows = vars(metric_label),
+    cols = vars(model_label),
+    scales = "free_y"
+  ) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme(panel.spacing.x = grid::unit(1.2, "lines")) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  expand_limits(y = 0) +
+  labs(
+    x = "True (DGM) outcome probability",
+    y = "Absolute relative deviation",
+    color = "Procedure",
+    fill = "Procedure"
+  )
+```
+
+**S-Figure 31. Predictions for the influential individual (non-linear DGM, larger sample size, Elastic Net) under each sampling procedure.**
+
+```{r}
+#| label: s-figure-31
+#| fig-width: 7
+#| fig-height: 6
+
+outlier_predictions |>
+  ggplot(aes(x = re_sample, y = pred_p)) +
+  geom_hline(
+    aes(yintercept = true_p, linetype = "True (DGM) outcome probability"),
+    colour = grey(0.4),
+    linewidth = 0.3
+  ) +
+  geom_hline(
+    aes(
+      yintercept = original_pred_p,
+      linetype = "Original fitted outcome probability"
+    ),
+    colour = grey(0.4),
+    linewidth = 0.3
+  ) +
+  geom_point(alpha = 0.5, size = 0.5) +
+  facet_wrap(vars(method_label), scales = "free_x", ncol = 3) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    breaks = seq(0, 1, 0.25),
+    limits = c(0, 1)
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "True (DGM) outcome probability" = "dashed",
+      "Original fitted outcome probability" = "dotted"
+    )
+  ) +
+  labs(
+    x = "Sample or resample number",
+    y = "Estimated outcome probability",
+    linetype = NULL
+  )
 ```

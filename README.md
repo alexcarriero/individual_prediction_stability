@@ -24,7 +24,7 @@ The simulation was run in **R 4.6.0** on the high-performance computing (HPC) cl
 
 - **Simulation:** `glmnet` 5.0, `ranger` 0.18.0, `MASS` 7.3-65, `pROC` 1.19.0.1, `tidyverse` 2.0.0 (`dplyr` 1.2.1, `tidyr` 1.3.2, `purrr` 1.2.2, `ggplot2` 4.0.3)
 - **Processing results:** `arrow`, `data.table`, `dplyr`, `here`
-- **Tables and figures:** [Quarto](https://quarto.org), `tidyverse`, `kableExtra`, `cowplot`, `patchwork`, `ggh4x`, `RColorBrewer`, `scales`, `mgcv`, `pROC`
+- **Tables and figures:** [Quarto](https://quarto.org), `tidyverse`, `arrow`, `here`, `kableExtra`, `cowplot`, `patchwork`, `ggh4x`, `ggrastr`, `ragg`, `RColorBrewer`, `scales`, `mgcv`, `pROC`
 
 The full `sessionInfo()` of the R installation used on the HPC is in [`sessionInfo.txt`](sessionInfo.txt). It was recorded after the simulation finished, from the same R installation and package library.
 
@@ -52,7 +52,8 @@ The full `sessionInfo()` of the R installation used on the HPC is in [`sessionIn
     └── scripts/
         ├── parquet_conversion.R            # raw .RDS output -> Parquet
         ├── calculate_evaluation_criteria.R # per-individual instability measures
-        └── figures_and_tables.qmd          # tables and figures in the paper
+        ├── figures_and_tables.qmd          # all tables and figures in the paper
+        └── social_media_figure.R           # summary figure for social media (not in the paper)
 ```
 
 Scenarios are numbered as follows throughout the code:
@@ -150,12 +151,7 @@ Run the scripts in `results/scripts/` from the repository root (they use `here::
 quarto render results/scripts/figures_and_tables.qmd
 ```
 
-It currently covers:
-
-- **Main text:** Table 3, Figures 1–3
-- **Supplementary material:** S-Table 1, S-Figures 1–9, 12–21 and 26–29
-
-The code for Figures 4–7 and S-Figures 10–11, 22–25 and 30–31 will be added in a later update.
+It covers every table and figure in the paper: Tables 1–3 and Figures 1–7 in the main text, and S-Table 1 and S-Figures 1–31 in the supplementary material. Each one is under a heading with its number in the paper.
 
 ---
 
